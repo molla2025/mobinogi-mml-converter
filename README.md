@@ -6,8 +6,13 @@ MIDI 파일을 마비노기 MML 형식으로 변환하는 Windows 데스크톱 �
 
 > **Windows 10/11 (64-bit) 전용**
 
-### 💻 단독 실행 파일
-**[📥 Mobinogi MML 변환기 다운로드 (v1.0.0)](https://drive.google.com/file/d/1anSF755NAwo1wb37pyES7KvG7kTFLII2/view?usp=sharing)**
+### 🔧 인스톨러 (권장)
+**[📥 인스톨러 다운로드 (v1.0.0)](https://drive.google.com/file/d/1Gvgs0KbDtVE1dKNSo4e_N9HsBW8HHoVZ/view?usp=sharing)**
+
+설치 프로그램을 통해 자동으로 설치됩니다. 바로가기 및 제거 기능 포함.
+
+### 💻 단독 실행 파일 (Portable)
+**[📥 실행 파일 다운로드 (v1.0.0)](https://drive.google.com/file/d/1a8vYVXGnC5N4YX6uLfWF7dqMcSFL9PuH/view?usp=sharing)**
 
 압축 해제 후 바로 실행 가능합니다. 설치 불필요.
 
