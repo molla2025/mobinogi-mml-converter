@@ -81,10 +81,9 @@ fn convert_by_pitch(
     compress_mode: bool,
 ) -> Result<Vec<VoiceResult>, String> {
     let voices = allocate_voices_smart(notes);
-    let mut temp_results = Vec::new();
+    let mut results = Vec::new();
 
-    // 먼저 모든 voice를 생성하고 최소 end_tick 찾기
-    for voice in voices.iter() {
+    for (idx, voice) in voices.iter().enumerate() {
         if voice.is_empty() {
             continue;
         }
@@ -94,46 +93,13 @@ fn convert_by_pitch(
             continue;
         }
 
-        temp_results.push(cropped);
-    }
-
-    if temp_results.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // 가장 짧은 end_tick 찾기
-    let min_end_tick = temp_results.iter()
-        .filter_map(|v| v.last().map(|n| n.end))
-        .min()
-        .unwrap_or(0);
-
-    // 모든 voice를 min_end_tick으로 다시 크롭하고 MML 생성
-    let mut results = Vec::new();
-    for (idx, voice_notes) in temp_results.iter().enumerate() {
-        // min_end_tick 이하의 노트만 남기기
-        let synced_notes: Vec<Note> = voice_notes.iter()
-            .filter(|n| n.start < min_end_tick)
-            .map(|n| {
-                let mut note = n.clone();
-                if note.end > min_end_tick {
-                    note.end = min_end_tick;
-                    note.duration = note.end - note.start;
-                }
-                note
-            })
-            .collect();
-
-        if synced_notes.is_empty() {
-            continue;
-        }
-
-        let first_note = synced_notes[0].note;
+        let first_note = cropped[0].note;
         let mut start_octave = (first_note as i32 / 12) - 1;
         start_octave = start_octave.max(2).min(6);
 
-        let mml_code = generate_mml_final(&synced_notes, bpm, start_octave, compress_mode);
-        let note_count = synced_notes.len();
-        let end_time = min_end_tick as f64 / TPB as f64 / 2.0;
+        let mml_code = generate_mml_final(&cropped, bpm, start_octave, compress_mode);
+        let note_count = cropped.len();
+        let end_time = cropped.last().unwrap().end as f64 / TPB as f64 / 2.0;
 
         let name = if idx == 0 {
             "멜로디".to_string()
@@ -167,11 +133,12 @@ fn convert_by_instrument(
             .push(note);
     }
 
-    let mut temp_results = Vec::new();
     let mut instrument_names: Vec<String> = instrument_groups.keys().cloned().collect();
     instrument_names.sort();
 
-    // 먼저 모든 voice를 생성하고 최소 end_tick 찾기
+    let mut results = Vec::new();
+    let mut global_voice_idx = 0;
+
     for instrument_name in &instrument_names {
         let instrument_notes = instrument_groups.get(instrument_name).unwrap();
         let voices = allocate_voices_smart(instrument_notes.clone());
@@ -186,65 +153,30 @@ fn convert_by_instrument(
                 continue;
             }
 
-            temp_results.push((instrument_name.clone(), cropped));
+            let first_note = cropped[0].note;
+            let mut start_octave = (first_note as i32 / 12) - 1;
+            start_octave = start_octave.max(2).min(6);
+
+            let mml_code = generate_mml_final(&cropped, bpm, start_octave, compress_mode);
+            let note_count = cropped.len();
+            let end_time = cropped.last().unwrap().end as f64 / TPB as f64 / 2.0;
+
+            let name = if global_voice_idx == 0 {
+                format!("멜로디 ({})", instrument_name)
+            } else {
+                format!("화음{} ({})", global_voice_idx, instrument_name)
+            };
+
+            results.push(VoiceResult {
+                name,
+                content: mml_code.clone(),
+                char_count: mml_code.len(),
+                note_count,
+                duration: end_time,
+            });
+
+            global_voice_idx += 1;
         }
-    }
-
-    if temp_results.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // 가장 짧은 end_tick 찾기
-    let min_end_tick = temp_results.iter()
-        .filter_map(|(_, v)| v.last().map(|n| n.end))
-        .min()
-        .unwrap_or(0);
-
-    // 모든 voice를 min_end_tick으로 다시 크롭하고 MML 생성
-    let mut results = Vec::new();
-    let mut global_voice_idx = 0;
-
-    for (inst_name, voice_notes) in temp_results.iter() {
-        // min_end_tick 이하의 노트만 남기기
-        let synced_notes: Vec<Note> = voice_notes.iter()
-            .filter(|n| n.start < min_end_tick)
-            .map(|n| {
-                let mut note = n.clone();
-                if note.end > min_end_tick {
-                    note.end = min_end_tick;
-                    note.duration = note.end - note.start;
-                }
-                note
-            })
-            .collect();
-
-        if synced_notes.is_empty() {
-            continue;
-        }
-
-        let first_note = synced_notes[0].note;
-        let mut start_octave = (first_note as i32 / 12) - 1;
-        start_octave = start_octave.max(2).min(6);
-
-        let mml_code = generate_mml_final(&synced_notes, bpm, start_octave, compress_mode);
-        let note_count = synced_notes.len();
-        let end_time = min_end_tick as f64 / TPB as f64 / 2.0;
-
-        let name = if global_voice_idx == 0 {
-            format!("멜로디 ({})", inst_name)
-        } else {
-            format!("화음{} ({})", global_voice_idx, inst_name)
-        };
-
-        results.push(VoiceResult {
-            name,
-            content: mml_code.clone(),
-            char_count: mml_code.len(),
-            note_count,
-            duration: end_time,
-        });
-
-        global_voice_idx += 1;
     }
 
     Ok(results)

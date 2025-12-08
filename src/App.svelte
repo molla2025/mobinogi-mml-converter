@@ -19,12 +19,39 @@
     total_notes: number;
   }
 
+  // 정렬된 voices 계산
+  function getSortedVoices(voices: VoiceResult[], sortBy: string): VoiceResult[] {
+    if (!voices || voices.length === 0) return [];
+    
+    // 멜로디와 나머지 분리
+    const melody = voices.filter(v => v.name === "멜로디" || v.name.startsWith("멜로디"));
+    const others = voices.filter(v => v.name !== "멜로디" && !v.name.startsWith("멜로디"));
+    
+    // 나머지만 정렬
+    if (sortBy === "notes") {
+      others.sort((a, b) => b.note_count - a.note_count);
+    } else if (sortBy === "instrument") {
+      others.sort((a, b) => {
+        const instA = a.name.match(/\(([^)]+)\)/)?.[1] || "";
+        const instB = b.name.match(/\(([^)]+)\)/)?.[1] || "";
+        
+        if (instA === instB) {
+          return b.note_count - a.note_count;
+        }
+        return instA.localeCompare(instB);
+      });
+    }
+    
+    return [...melody, ...others];
+  }
+
   let isDragging = $state(false);
   let isConverting = $state(false);
   let result = $state<ConversionResult | null>(null);
   let fileName = $state("");
   let conversionMode = $state("normal");
   let charLimit = $state(1200);
+  let sortBy = $state("notes");
   let errorMessage = $state("");
   let copiedIndex = $state(-1);
 
@@ -32,9 +59,11 @@
     if (typeof window !== 'undefined') {
       const savedMode = localStorage.getItem('conversionMode');
       const savedLimit = localStorage.getItem('charLimit');
+      const savedSortBy = localStorage.getItem('sortBy');
 
       if (savedMode) conversionMode = savedMode;
       if (savedLimit) charLimit = parseInt(savedLimit, 10);
+      if (savedSortBy) sortBy = savedSortBy;
     }
   });
 
@@ -42,6 +71,7 @@
     if (typeof window !== 'undefined') {
       localStorage.setItem('conversionMode', conversionMode);
       localStorage.setItem('charLimit', charLimit.toString());
+      localStorage.setItem('sortBy', sortBy);
     }
   });
 
@@ -284,9 +314,16 @@
         <!-- 결과 리스트 섹션 -->
         <section class="flex-1 rounded-2xl bg-gradient-to-br from-slate-800/50 to-slate-900/50 border border-slate-700/30 p-3 shadow-2xl shadow-slate-950/60 min-h-0 flex flex-col">
           {#if result.voices.length > 0}
+            <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-700/50">
+              <h3 class="text-xs font-semibold text-slate-300">변환된 파트</h3>
+              <select class="select select-bordered select-xs bg-slate-900/90 border-slate-600/60 text-slate-200 text-[11px] focus:border-sky-400 focus:outline-none" bind:value={sortBy}>
+                <option value="notes">음표 수 많은 순</option>
+                <option value="instrument">악기별 정렬</option>
+              </select>
+            </div>
             <div class="overflow-y-auto min-h-0 flex-1">
               <div class="flex flex-col md:grid md:grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2 md:gap-3">
-                {#each result.voices as voice, idx}
+                {#each getSortedVoices(result.voices, sortBy) as voice, idx}
                   <article class="rounded-xl p-3 bg-slate-950/50 border border-slate-700/80 flex flex-col gap-2.5 h-fit">
                     <div class="flex justify-between items-start gap-2">
                       <div>
