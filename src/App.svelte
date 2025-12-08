@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { open } from "@tauri-apps/plugin-dialog";
@@ -54,20 +55,9 @@
   let sortBy = $state("notes");
   let errorMessage = $state("");
   let copiedIndex = $state(-1);
-
-  $effect(() => {
-    if (typeof window !== 'undefined') {
-      const savedMode = localStorage.getItem('conversionMode');
-      const savedLimit = localStorage.getItem('charLimit');
-      const savedSortBy = localStorage.getItem('sortBy');
-
-      if (savedMode) conversionMode = savedMode;
-      if (savedLimit) charLimit = parseInt(savedLimit, 10);
-      if (savedSortBy) sortBy = savedSortBy;
-    }
-  });
-
-  $effect(() => {
+  
+  // localStorage에 저장 (상태 변경시 자동 실행)
+  $effect.pre(() => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('conversionMode', conversionMode);
       localStorage.setItem('charLimit', charLimit.toString());
@@ -75,10 +65,18 @@
     }
   });
 
-  $effect(() => {
-    const appWindow = getCurrentWindow();
-    let unlisten: (() => void) | null = null;
+  onMount(() => {
+    // localStorage 불러오기
+    const savedMode = localStorage.getItem('conversionMode');
+    const savedLimit = localStorage.getItem('charLimit');
+    const savedSortBy = localStorage.getItem('sortBy');
 
+    if (savedMode) conversionMode = savedMode;
+    if (savedLimit) charLimit = parseInt(savedLimit, 10);
+    if (savedSortBy) sortBy = savedSortBy;
+
+    // Drag & Drop 이벤트
+    const appWindow = getCurrentWindow();
     appWindow.onDragDropEvent((event) => {
       if (event.payload.type === "drop") {
         isDragging = false;
@@ -90,13 +88,7 @@
       } else if (event.payload.type === "over") {
         isDragging = true;
       }
-    }).then((fn) => {
-      unlisten = fn;
     });
-
-    return () => {
-      if (unlisten) unlisten();
-    };
   });
 
   async function handleFileSelect() {
@@ -168,12 +160,11 @@
   }
 
   function copyToClipboard(content: string, index: number) {
-    navigator.clipboard.writeText(content).then(() => {
-      copiedIndex = index;
-      setTimeout(() => {
-        copiedIndex = -1;
-      }, 2000);
-    });
+    copiedIndex = index;
+    navigator.clipboard.writeText(content);
+    setTimeout(() => {
+      copiedIndex = -1;
+    }, 1500);
   }
 
   function reset() {
@@ -198,8 +189,8 @@
         🎵
       </div>
       <div>
-        <h1 class="text-base font-semibold">Mobinogi MML 변환기</h1>
-        <p class="text-[11px] text-slate-400">MIDI → MML 변환</p>
+        <h1 class="text-base font-semibold">M2M</h1>
+        <p class="text-[11px] text-slate-400">MIDI to MML Converter</p>
       </div>
     </div>
     <div class="flex items-center justify-between sm:justify-end gap-3 text-[10px] text-slate-500">
@@ -322,32 +313,33 @@
               </select>
             </div>
             <div class="overflow-y-auto min-h-0 flex-1">
-              <div class="flex flex-col md:grid md:grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2 md:gap-3">
-                {#each getSortedVoices(result.voices, sortBy) as voice, idx}
-                  <article class="rounded-xl p-3 bg-slate-950/50 border border-slate-700/80 flex flex-col gap-2.5 h-fit">
-                    <div class="flex justify-between items-start gap-2">
-                      <div>
-                        <h3 class="text-xs font-medium">{voice.name}</h3>
-                        <p class="text-[11px] text-slate-500 mt-0.5">
-                          {voice.note_count}개 음표 · {voice.char_count}자
-                        </p>
-                      </div>
-                      {#if copiedIndex === idx}
-                        <span class="text-[11px] text-green-400 whitespace-nowrap">✓ 복사</span>
-                      {/if}
+            <div class="flex flex-col md:grid md:grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2 md:gap-3">
+              {#each getSortedVoices(result.voices, sortBy) as voice, idx}
+                <article class="rounded-xl p-3 bg-slate-950/50 border border-slate-700/80 flex flex-col gap-2.5 h-fit relative {copiedIndex === idx ? 'ring-2 ring-green-400/50 shadow-[0_0_20px_rgba(34,197,94,0.3)]' : ''}">
+                  <div class="flex justify-between items-start gap-2">
+                    <div>
+                      <h3 class="text-xs font-medium">{voice.name}</h3>
+                      <p class="text-[11px] text-slate-500 mt-0.5">
+                        {voice.note_count}개 음표 · {voice.char_count}자
+                      </p>
                     </div>
+                  </div>
 
-                    <button
-                      class="btn btn-primary btn-sm rounded-full text-xs font-medium w-full bg-gradient-to-r from-sky-400 to-indigo-500 border-0 text-slate-950 shadow-lg shadow-indigo-500/40 hover:opacity-95 active:translate-y-0.5"
-                      type="button"
-                      onclick={() => copyToClipboard(voice.content, idx)}
-                    >
+                  <button
+                    class="btn btn-primary btn-sm rounded-full text-xs font-medium w-full bg-gradient-to-r from-sky-400 to-indigo-500 border-0 text-slate-950 shadow-lg shadow-indigo-500/40 hover:opacity-95 active:translate-y-0.5 {copiedIndex === idx ? 'bg-gradient-to-r from-green-400 to-emerald-500' : ''}"
+                    type="button"
+                    onclick={() => copyToClipboard(voice.content, idx)}
+                  >
+                    {#if copiedIndex === idx}
+                      ✓ 복사 완료!
+                    {:else}
                       📋 MML 복사하기
-                    </button>
-                  </article>
-                {/each}
-              </div>
+                    {/if}
+                  </button>
+                </article>
+              {/each}
             </div>
+          </div>
           {:else}
             <div class="alert alert-warning rounded-xl p-2.5 text-xs bg-amber-500/10 border border-amber-500/50 text-amber-100">
               <span>변환된 음표가 없습니다.</span>

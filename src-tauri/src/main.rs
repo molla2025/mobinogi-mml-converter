@@ -82,33 +82,73 @@ fn convert_by_pitch(
 ) -> Result<Vec<VoiceResult>, String> {
     let voices = allocate_voices_smart(notes);
     
-    // 1단계: 모든 voice를 글자수 제한으로 자르기
-    let mut cropped_voices = Vec::new();
-    for voice in voices.iter() {
-        if voice.is_empty() {
-            continue;
-        }
-        let cropped = crop_voice_to_limit(voice, bpm, char_limit, compress_mode);
-        if !cropped.is_empty() {
-            cropped_voices.push(cropped);
-        }
-    }
+    // 빈 voice 제거
+    let voices: Vec<Vec<Note>> = voices.into_iter()
+        .filter(|v| !v.is_empty())
+        .collect();
     
-    if cropped_voices.is_empty() {
+    if voices.is_empty() {
         return Ok(Vec::new());
     }
     
-    // 2단계: 가장 짧은 voice의 끝 시간 찾기
-    let min_end_time = cropped_voices.iter()
-        .map(|v| v.last().unwrap().end)
-        .min()
-        .unwrap();
+    // 최대 end_time 찾기
+    let max_end_time = voices.iter()
+        .flat_map(|v| v.iter())
+        .map(|n| n.end)
+        .max()
+        .unwrap_or(0);
     
-    // 3단계: 모든 voice를 가장 짧은 길이로 재자르기
+    if max_end_time == 0 {
+        return Ok(Vec::new());
+    }
+    
+    // 이진 탐색으로 모든 voice가 char_limit 이하인 최대 end_time 찾기
+    let grid_size = 24u32;
+    let mut left = 0u32;
+    let mut right = max_end_time;
+    let mut best_end_time = max_end_time;
+    
+    while left <= right {
+        let mid = ((left + right) / 2 / grid_size) * grid_size;
+        
+        let mut all_valid = true;
+        
+        // 각 voice를 mid 시간까지 크롭해서 char_limit 체크
+        for voice in voices.iter() {
+            let cropped: Vec<Note> = voice.iter()
+                .filter(|n| n.start < mid)
+                .cloned()
+                .collect();
+            
+            if cropped.is_empty() {
+                continue;
+            }
+            
+            let first_note = cropped[0].note;
+            let mut start_octave = (first_note as i32 / 12) - 1;
+            start_octave = start_octave.max(2).min(6);
+            
+            let mml = generate_mml_final(&cropped, bpm, start_octave, compress_mode);
+            
+            if mml.len() > char_limit {
+                all_valid = false;
+                break;
+            }
+        }
+        
+        if all_valid {
+            best_end_time = mid;
+            left = mid + grid_size;
+        } else {
+            right = mid - grid_size;
+        }
+    }
+    
+    // best_end_time으로 모든 voice 최종 크롭
     let mut results = Vec::new();
-    for (idx, voice) in cropped_voices.iter().enumerate() {
+    for (idx, voice) in voices.iter().enumerate() {
         let final_voice: Vec<Note> = voice.iter()
-            .filter(|n| n.start < min_end_time)
+            .filter(|n| n.start < best_end_time)
             .cloned()
             .collect();
         
@@ -122,7 +162,7 @@ fn convert_by_pitch(
 
         let mml_code = generate_mml_final(&final_voice, bpm, start_octave, compress_mode);
         let note_count = final_voice.len();
-        let end_time = min_end_time as f64 / TPB as f64 / 2.0;
+        let end_time = best_end_time as f64 / TPB as f64 / 2.0;
 
         let name = if idx == 0 {
             "멜로디".to_string()
@@ -159,42 +199,84 @@ fn convert_by_instrument(
     let mut instrument_names: Vec<String> = instrument_groups.keys().cloned().collect();
     instrument_names.sort();
 
-    // 1단계: 모든 악기의 voice를 글자수 제한으로 자르기
-    let mut all_cropped_voices = Vec::new();
+    // 모든 악기의 voice 수집
+    let mut all_voices = Vec::new();
     let mut voice_instrument_map = Vec::new();
     
     for instrument_name in &instrument_names {
         let instrument_notes = instrument_groups.get(instrument_name).unwrap();
         let voices = allocate_voices_smart(instrument_notes.clone());
 
-        for voice in voices.iter() {
-            if voice.is_empty() {
-                continue;
-            }
-
-            let cropped = crop_voice_to_limit(voice, bpm, char_limit, compress_mode);
-            if !cropped.is_empty() {
-                all_cropped_voices.push(cropped);
+        for voice in voices.into_iter() {
+            if !voice.is_empty() {
+                all_voices.push(voice);
                 voice_instrument_map.push(instrument_name.clone());
             }
         }
     }
     
-    if all_cropped_voices.is_empty() {
+    if all_voices.is_empty() {
         return Ok(Vec::new());
     }
     
-    // 2단계: 가장 짧은 voice의 끝 시간 찾기
-    let min_end_time = all_cropped_voices.iter()
-        .map(|v| v.last().unwrap().end)
-        .min()
-        .unwrap();
+    // 최대 end_time 찾기
+    let max_end_time = all_voices.iter()
+        .flat_map(|v| v.iter())
+        .map(|n| n.end)
+        .max()
+        .unwrap_or(0);
     
-    // 3단계: 모든 voice를 가장 짧은 길이로 재자르기
+    if max_end_time == 0 {
+        return Ok(Vec::new());
+    }
+    
+    // 이진 탐색으로 모든 voice가 char_limit 이하인 최대 end_time 찾기
+    let grid_size = 24u32;
+    let mut left = 0u32;
+    let mut right = max_end_time;
+    let mut best_end_time = max_end_time;
+    
+    while left <= right {
+        let mid = ((left + right) / 2 / grid_size) * grid_size;
+        
+        let mut all_valid = true;
+        
+        // 각 voice를 mid 시간까지 크롭해서 char_limit 체크
+        for voice in all_voices.iter() {
+            let cropped: Vec<Note> = voice.iter()
+                .filter(|n| n.start < mid)
+                .cloned()
+                .collect();
+            
+            if cropped.is_empty() {
+                continue;
+            }
+            
+            let first_note = cropped[0].note;
+            let mut start_octave = (first_note as i32 / 12) - 1;
+            start_octave = start_octave.max(2).min(6);
+            
+            let mml = generate_mml_final(&cropped, bpm, start_octave, compress_mode);
+            
+            if mml.len() > char_limit {
+                all_valid = false;
+                break;
+            }
+        }
+        
+        if all_valid {
+            best_end_time = mid;
+            left = mid + grid_size;
+        } else {
+            right = mid - grid_size;
+        }
+    }
+    
+    // best_end_time으로 모든 voice 최종 크롭
     let mut results = Vec::new();
-    for (idx, (voice, instrument_name)) in all_cropped_voices.iter().zip(voice_instrument_map.iter()).enumerate() {
+    for (idx, (voice, instrument_name)) in all_voices.iter().zip(voice_instrument_map.iter()).enumerate() {
         let final_voice: Vec<Note> = voice.iter()
-            .filter(|n| n.start < min_end_time)
+            .filter(|n| n.start < best_end_time)
             .cloned()
             .collect();
         
@@ -208,7 +290,7 @@ fn convert_by_instrument(
 
         let mml_code = generate_mml_final(&final_voice, bpm, start_octave, compress_mode);
         let note_count = final_voice.len();
-        let end_time = min_end_time as f64 / TPB as f64 / 2.0;
+        let end_time = best_end_time as f64 / TPB as f64 / 2.0;
 
         let name = if idx == 0 {
             format!("멜로디 ({})", instrument_name)
